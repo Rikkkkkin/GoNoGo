@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Go/NoGo 課題 - 難易度アップ版</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0; 
+      padding: 0;
+    }
+    body {
+      font-family: sans-serif;
+      background: linear-gradient(135deg, #e4efe9, #93a5cf);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+    }
+    h1 {
+      margin-top: 20px;
+      color: #333;
+    }
+    #instruction {
+      margin-top: 10px;
+      color: #333;
+      text-align: center;
+      line-height: 1.4;
+    }
+    #task-area {
+      position: relative;
+      width: 600px;
+      height: 300px;
+      margin-top: 30px;
+      background: #fff;
+      border: 2px solid #333;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stimulus {
+      font-size: 5rem;
+      color: #333;
+    }
+    #info {
+      margin-top: 20px;
+      min-height: 2em;
+      color: #333;
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      margin-top: 20px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      background: #3498db;
+      color: #fff;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+  </style>
+</head>
+<body>
+  <h1>Go/NoGo 課題 (難易度アップ)</h1>
+  <div id="instruction">
+    <p>○（丸）が出たら <strong>スペースキー</strong> を押してください（Go）</p>
+    <p>×（バツ）が出たら何も押さないでください（NoGo）</p>
+    <p>できるだけ早く、しかし正確に！</p>
+    <p>※ <strong>800ms以内</strong>に反応しないと、Goでもミス扱いです</p>
+  </div>
+
+  <div id="task-area">
+    <!-- 刺激が表示される領域 -->
+  </div>
+
+  <div id="info"></div>
+  <button id="start-btn">開始</button>
+
+  <script>
+    /***************************************************
+     * 1. 定数・変数の定義
+     ***************************************************/
+    const taskArea = document.getElementById('task-area');
+    const infoArea = document.getElementById('info');
+    const startBtn = document.getElementById('start-btn');
+
+    // 難易度アップ用の設定
+    const TRIAL_COUNT = 20;    // 試行数を増やす
+    const GO_RATIO = 0.5;      // GoとNoGoを半々に (難易度調整したい場合)
+    const MAX_RESPONSE_TIME = 800;  // Go刺激に反応できる猶予(ミリ秒)
+    const ISI_MIN = 500;       // 刺激間インターバル下限
+    const ISI_MAX = 1000;      // 刺激間インターバル上限
+
+    let trials = [];             // 試行リスト
+    let currentTrialIndex = 0;   
+    let inProgress = false;      // 試行中フラグ
+    let startTime = 0;           // 刺激提示時刻
+    let responseTimer = null;    // 反応タイマー
+    let results = [];            // 結果格納
+
+    /***************************************************
+     * 2. 開始ボタン
+     ***************************************************/
+    startBtn.addEventListener('click', startTask);
+
+    function startTask() {
+      startBtn.disabled = true;
+      infoArea.textContent = '';
+
+      createTrials();
+      currentTrialIndex = 0;
+      results = [];
+
+      runNextTrial();
+    }
+
+    /***************************************************
+     * 3. 試行リストを作成
+     ***************************************************/
+    function createTrials() {
+      // TRIAL_COUNTのうち GO_RATIO の割合がGo
+      const goCount = Math.floor(TRIAL_COUNT * GO_RATIO);
+      const noGoCount = TRIAL_COUNT - goCount;
+
+      let labels = Array(goCount).fill('Go')
+                     .concat(Array(noGoCount).fill('NoGo'));
+      shuffle(labels);
+
+      trials = labels.map(lbl => ({ type: lbl }));
+    }
+
+    // Fisher-Yates shuffle
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    /***************************************************
+     * 4. 次の試行へ
+     ***************************************************/
+    function runNextTrial() {
+      if (currentTrialIndex >= TRIAL_COUNT) {
+        endTask();
+        return;
+      }
+
+      inProgress = true;
+      taskArea.innerHTML = '';
+
+      const trial = trials[currentTrialIndex];
+
+      // 刺激表示
+      showStimulus(trial.type);
+      startTime = performance.now();
+
+      // ここで「Goでも反応しないままMAX_RESPONSE_TIME経過したらミス」とする
+      responseTimer = setTimeout(() => {
+        // まだ回答していないなら
+        if (inProgress) {
+          inProgress = false;
+          recordResult(false, true); // "false=押してない, true=タイムアウト"
+        }
+      }, MAX_RESPONSE_TIME);
+    }
+
+    // 刺激表示 (Go: "○" / NoGo: "×")
+    function showStimulus(type) {
+      const stimDiv = document.createElement('div');
+      stimDiv.classList.add('stimulus');
+      stimDiv.textContent = (type === 'Go') ? '○' : '×';
+      taskArea.appendChild(stimDiv);
+    }
+
+    /***************************************************
+     * 5. キー反応を取得 (スペースキー)
+     ***************************************************/
+    window.addEventListener('keydown', e => {
+      // スペースキー(32) 以外無視
+      if (!inProgress || e.keyCode !== 32) return;
+
+      // ユーザが押した場合
+      clearTimeout(responseTimer);
+      inProgress = false;
+      recordResult(true, false);
+    });
+
+    /***************************************************
+     * 6. 結果記録＆次へ
+     ***************************************************/
+    // recordResult( userPressed, timeOut )
+    //   - userPressed: ユーザが押したかどうか
+    //   - timeOut: タイムアウト発生したか（Go刺激をスルーした場合など）
+    function recordResult(userPressed, timeOut) {
+      const endTime = performance.now();
+      const rt = endTime - startTime;
+
+      const trial = trials[currentTrialIndex];
+      let isCorrect = false;
+      let responseTime = null;
+
+      // Go 刺激の場合
+      if (trial.type === 'Go') {
+        if (userPressed && !timeOut) {
+          // 反応あり(時間内)
+          isCorrect = true;
+          responseTime = rt;
+        } else {
+          // No反応 or 時間切れ
+          isCorrect = false;
+        }
+      }
+      // NoGo 刺激の場合
+      else {
+        if (userPressed) {
+          // 押してしまった => 誤反応
+          isCorrect = false;
+          responseTime = rt;
+        } else {
+          // 押さずにスルー => 正解
+          isCorrect = true;
+        }
+      }
+
+      results.push({
+        stimulus: trial.type,
+        correct: isCorrect,
+        rt: responseTime,
+        timeOut: timeOut
+      });
+
+      // 刺激消去
+      taskArea.innerHTML = '';
+      currentTrialIndex++;
+
+      // 次の刺激までランダムインターバル
+      const isi = ISI_MIN + Math.floor(Math.random() * (ISI_MAX - ISI_MIN + 1));
+      setTimeout(() => {
+        runNextTrial();
+      }, isi);
+    }
+
+    /***************************************************
+     * 7. 全試行終了処理
+     ***************************************************/
+    function endTask() {
+      taskArea.textContent = 'お疲れ様でした！';
+
+      // 集計
+      const n = results.length;
+      const correctCount = results.filter(r => r.correct).length;
+      const accuracy = (correctCount / n) * 100;
+
+      // Go刺激のみの正解かつRTありを抽出
+      const goHits = results.filter(r => r.stimulus === 'Go' && r.correct);
+      let meanRT = 0;
+      if (goHits.length > 0) {
+        meanRT = goHits.reduce((acc, cur) => acc + (cur.rt || 0), 0) / goHits.length;
+      }
+
+      infoArea.innerHTML = `
+        <p>試行数：${n} (Go ${n * GO_RATIO}, NoGo ${n - (n * GO_RATIO)})</p>
+        <p>正答率：${accuracy.toFixed(1)} %</p>
+        <p>Go刺激の平均RT（正解のみ）：${meanRT.toFixed(2)} ms</p>
+      `;
+
+      startBtn.disabled = false;
+      startBtn.textContent = 'もう一度';
+    }
+  </script>
+</body>
+</html>
